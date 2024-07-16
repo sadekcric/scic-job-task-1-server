@@ -104,32 +104,6 @@ async function run() {
     });
 
     // Send Money
-    // app.put("/send-money/:phone", async (req, res) => {
-    //   const senderPhone = parseInt(req.params.phone);
-    //   const query = { phone: senderPhone };
-    //   const { receiverPhone, pin, balance } = req.body;
-
-    //   const senderFind = await userCollection.findOne(query);
-    //   const receiverFind = await userCollection.findOne({ phone: parseInt(receiverPhone) });
-
-    //   const isMatch = bcrypt.compareSync(toString(pin), senderFind.pin);
-
-    //   if (!isMatch) {
-    //     return res.send({ message: "Phone no and password don't match!" });
-    //   }
-
-    //   if (!receiverFind) {
-    //     return res.status(404).send("Receiver not found");
-    //   }
-
-    //   await userCollection.updateOne({ phone: parseInt(receiverPhone) }, { $inc: { balance: balance } });
-
-    //   const updatedSender = await userCollection.updateOne({ phone: senderPhone }, { $inc: { balance: -(balance + 5) } });
-
-    //   res.send(updatedSender);
-    // });
-
-    // Send Money
     app.put("/send-money/:phone", async (req, res) => {
       const senderPhone = parseInt(req.params.phone);
       const { receiverPhone, pin, balance } = req.body;
@@ -155,7 +129,7 @@ async function run() {
         return res.status(401).send({ message: "Phone number and pin don't match" });
       }
 
-      // if (senderFind.balance < balance + 5) {
+      // if (senderFind.balance < balance) {
       //   return res.status(400).send("Insufficient balance");
       // }
 
@@ -174,7 +148,7 @@ async function run() {
         // Update sender's balance
         const updatedSender = await userCollection.updateOne(
           { phone: senderPhone },
-          { $inc: { balance: balance > 100 ? -(parseFloat(balance) + 5) : -parseFloat(balance) } },
+          { $inc: { balance: -parseFloat(balance) } },
           { session }
         );
 
