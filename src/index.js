@@ -33,7 +33,6 @@ async function run() {
         const query = { phone: users.phone };
         const findUser = await userCollection.findOne(query);
         const pin = toString(users.pin);
-        console.log(pin);
 
         const hash = bcrypt.hashSync(pin, 8);
 
@@ -166,6 +165,36 @@ async function run() {
         console.error("Error during transaction:", error);
         res.status(500).send("Internal Server Error");
       }
+    });
+
+    // Cash Out
+    app.put("/cash-out/:phone", async (req, res) => {
+      const userPhone = parseInt(req.params.phone);
+      const { phone, balance, pin } = req.body;
+      const agentNumber = parseInt(phone);
+      const cashOut = parseFloat(balance);
+      const userPin = toString(pin);
+
+      const findUser = await userCollection.findOne({ phone: userPhone });
+      const findAgent = await userCollection.findOne({ phone: agentNumber });
+
+      const isMatch = bcrypt.compareSync(userPin, findUser.pin);
+
+      if (!isMatch) {
+        return res.status(504).send({ message: "Unauthorize Access!" });
+      }
+
+      if (findAgent.role !== "agent") {
+        return res.status(400).send({ message: "Agent not found!" });
+      }
+
+      const updateUser = await userCollection.updateOne({ phone: userPhone }, { $inc: { balance: -cashOut } });
+
+      const updateAgent = await userCollection.updateOne({ phone: agentNumber }, { $inc: { balance: cashOut } });
+
+      console.log(updateUser, updateAgent);
+
+      res.status(200).send(updateAgent);
     });
 
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
