@@ -55,21 +55,29 @@ async function run() {
 
       const query = { phone: parseInt(phone) };
 
-      const user = await userCollection.findOne(query);
+      try {
+        const user = await userCollection.findOne(query);
 
-      const isMatch = bcrypt.compareSync(toString(pin), user.pin);
+        const isMatch = bcrypt.compareSync(toString(pin), user.pin);
 
-      if (!isMatch) {
-        return res.send({ message: "User Not Found" });
+        if (!isMatch) {
+          return res.status(404).send({ message: "User Not Found" });
+        }
+
+        res.status(200).send(user);
+      } catch (error) {
+        res.status(500).send({ message: error.message });
       }
-
-      res.send(user);
     });
 
     // Get All User for Admin
     app.get("/users", async (req, res) => {
-      const allUser = await userCollection.find().toArray();
-      res.send(allUser);
+      try {
+        const allUser = await userCollection.find().toArray();
+        res.status(200).send(allUser);
+      } catch (error) {
+        res.status(500).send(error.message);
+      }
     });
 
     // Update Status
@@ -80,26 +88,27 @@ async function run() {
       const query = { _id: new ObjectId(id) };
       let balance = 0;
 
-      const findUser = await userCollection.findOne(query);
-      if (findUser.role === "user") {
-        balance = 40;
+      try {
+        const findUser = await userCollection.findOne(query);
+        if (findUser.role === "user") {
+          balance = 40;
+        }
+        if (findUser.role === "agent") {
+          balance = 8000;
+        }
+
+        const updatedDoc = {
+          $set: {
+            status,
+            balance,
+          },
+        };
+
+        const updateUser = await userCollection.updateOne(query, updatedDoc);
+        res.status(200).send(updateUser);
+      } catch (error) {
+        res.status(500).send(error.message);
       }
-      if (findUser.role === "agent") {
-        balance = 8000;
-      }
-
-      console.log(findUser);
-
-      const updatedDoc = {
-        $set: {
-          status,
-          balance,
-        },
-      };
-
-      console.log(updatedDoc);
-      const updateUser = await userCollection.updateOne(query, updatedDoc);
-      res.send(updateUser);
     });
 
     // Send Money
@@ -107,32 +116,32 @@ async function run() {
       const senderPhone = parseInt(req.params.phone);
       const { receiverPhone, pin, balance } = req.body;
 
-      if (!receiverPhone || !pin || !balance) {
-        return res.status(400).send("Receiver phone, pin, and balance are required");
-      }
-
-      const senderFind = await userCollection.findOne({ phone: senderPhone });
-      const receiverFind = await userCollection.findOne({ phone: parseInt(receiverPhone) });
-
-      if (!senderFind) {
-        return res.status(404).send({ message: "Sender not found" });
-      }
-
-      if (!receiverFind) {
-        return res.status(404).send("Receiver not found");
-      }
-
-      const isMatch = bcrypt.compareSync(toString(pin), senderFind.pin);
-
-      if (!isMatch) {
-        return res.status(401).send({ message: "Phone number and pin don't match" });
-      }
-
       // if (senderFind.balance < balance) {
       //   return res.status(400).send("Insufficient balance");
       // }
 
       try {
+        if (!receiverPhone || !pin || !balance) {
+          return res.status(400).send("Receiver phone, pin, and balance are required");
+        }
+
+        const senderFind = await userCollection.findOne({ phone: senderPhone });
+        const receiverFind = await userCollection.findOne({ phone: parseInt(receiverPhone) });
+
+        if (!senderFind) {
+          return res.status(404).send({ message: "Sender not found" });
+        }
+
+        if (!receiverFind) {
+          return res.status(404).send("Receiver not found");
+        }
+
+        const isMatch = bcrypt.compareSync(toString(pin), senderFind.pin);
+
+        if (!isMatch) {
+          return res.status(401).send({ message: "Phone number and pin don't match" });
+        }
+
         // Start a transaction
         const session = client.startSession();
         session.startTransaction();
@@ -141,6 +150,7 @@ async function run() {
         const updatedReceiver = await userCollection.updateOne(
           { phone: parseInt(receiverPhone) },
           { $inc: { balance: parseFloat(balance) } },
+          { $push: { transition: { transitionNo: senderPhone, transitionBalance: parseFloat(balance), requestStatus: "received" } } },
           { session }
         );
 
@@ -148,6 +158,11 @@ async function run() {
         const updatedSender = await userCollection.updateOne(
           { phone: senderPhone },
           { $inc: { balance: -parseFloat(balance) } },
+          {
+            $push: {
+              transition: { transitionNo: parseInt(receiverPhone), transitionBalance: parseFloat(balance), requestStatus: "send money" },
+            },
+          },
           { session }
         );
 
@@ -175,26 +190,36 @@ async function run() {
       const cashOut = parseFloat(balance);
       const userPin = toString(pin);
 
-      const findUser = await userCollection.findOne({ phone: userPhone });
-      const findAgent = await userCollection.findOne({ phone: agentNumber });
+      try {
+        const findUser = await userCollection.findOne({ phone: userPhone });
+        const findAgent = await userCollection.findOne({ phone: agentNumber });
 
-      const isMatch = bcrypt.compareSync(userPin, findUser.pin);
+        const isMatch = bcrypt.compareSync(userPin, findUser.pin);
 
-      if (!isMatch) {
-        return res.status(504).send({ message: "Unauthorize Access!" });
+        if (!isMatch) {
+          return res.status(504).send({ message: "Unauthorize Access!" });
+        }
+
+        if (findAgent.role !== "agent") {
+          return res.status(400).send({ message: "Agent not found!" });
+        }
+
+        await userCollection.updateOne(
+          { phone: userPhone },
+          { $inc: { balance: -cashOut } },
+          { $push: { transition: { transitionNo: agentNumber, transitionBalance: cashOut, requestStatus: "cash out" } } }
+        );
+
+        const updateAgent = await userCollection.updateOne(
+          { phone: agentNumber },
+          { $inc: { balance: cashOut } },
+          { $push: { transition: { transitionNo: userPhone, transitionBalance: cashOut, requestStatus: "received" } } }
+        );
+
+        res.status(200).send(updateAgent);
+      } catch (error) {
+        res.status(500).send(error.message);
       }
-
-      if (findAgent.role !== "agent") {
-        return res.status(400).send({ message: "Agent not found!" });
-      }
-
-      const updateUser = await userCollection.updateOne({ phone: userPhone }, { $inc: { balance: -cashOut } });
-
-      const updateAgent = await userCollection.updateOne({ phone: agentNumber }, { $inc: { balance: cashOut } });
-
-      console.log(updateUser, updateAgent);
-
-      res.status(200).send(updateAgent);
     });
 
     // Cash In
@@ -219,6 +244,12 @@ async function run() {
           return res.status(404).send({ message: "Agent Not Found." });
         }
 
+        // transition
+        await userCollection.updateOne(
+          { phone: agent },
+          { $push: { transition: { transitionNo: agent, transitionBalance: requestedBalance, requestStatus: "pending" } } }
+        );
+
         const updateAgent = await userCollection.updateOne(
           { phone: agent },
           { $push: { cashInRequest: { requestNumber: user, requestedBalance, requestedStatus: "pending" } } }
@@ -232,8 +263,6 @@ async function run() {
 
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
-    // Ensures that the client will close when you finish/error
-    // await client.close();
   }
 }
 run().catch(console.dir);
