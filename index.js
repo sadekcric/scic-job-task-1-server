@@ -70,7 +70,7 @@ async function run() {
       }
     });
 
-    // Get All User for Admin
+    // Get All User (Admin Route)
     app.get("/users", async (req, res) => {
       try {
         const allUser = await userCollection.find().toArray();
@@ -80,7 +80,7 @@ async function run() {
       }
     });
 
-    // Update Status
+    // Update Status (Admin Route)
     app.put("/users/status/:id", async (req, res) => {
       const { id } = req.params;
       console.log(id);
@@ -94,7 +94,7 @@ async function run() {
           balance = 40;
         }
         if (findUser.role === "agent") {
-          balance = 8000;
+          balance = 10000;
         }
 
         const updatedDoc = {
@@ -246,7 +246,7 @@ async function run() {
 
         // transition
         await userCollection.updateOne(
-          { phone: agent },
+          { phone: user },
           { $push: { transition: { transitionNo: agent, transitionBalance: requestedBalance, requestStatus: "pending" } } }
         );
 
