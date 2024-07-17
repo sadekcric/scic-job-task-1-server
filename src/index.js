@@ -66,7 +66,7 @@ async function run() {
       res.send(user);
     });
 
-    // Get All User
+    // Get All User for Admin
     app.get("/users", async (req, res) => {
       const allUser = await userCollection.find().toArray();
       res.send(allUser);
@@ -195,6 +195,39 @@ async function run() {
       console.log(updateUser, updateAgent);
 
       res.status(200).send(updateAgent);
+    });
+
+    // Cash In
+    app.put("/cash-in/:phone", async (req, res) => {
+      const user = parseInt(req.params.phone);
+      const { agentNumber, requestBalance, pin } = req.body;
+      const agent = parseInt(agentNumber);
+      const requestedBalance = parseFloat(requestBalance);
+      const userPin = toString(pin);
+
+      try {
+        const getUser = await userCollection.findOne({ phone: user });
+        const getAgent = await userCollection.findOne({ phone: agent });
+
+        const isMatch = bcrypt.compareSync(userPin, getUser.pin);
+
+        if (!isMatch) {
+          return res.status(504).send({ message: "Unauthorize Access" });
+        }
+
+        if (getAgent.role !== "agent") {
+          return res.status(404).send({ message: "Agent Not Found." });
+        }
+
+        const updateAgent = await userCollection.updateOne(
+          { phone: agent },
+          { $push: { cashInRequest: { requestNumber: user, requestedBalance, requestedStatus: "pending" } } }
+        );
+
+        res.status(200).send(updateAgent);
+      } catch (error) {
+        res.status(500).send({ message: error.message });
+      }
     });
 
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
